@@ -77,7 +77,7 @@ sort_inventory <- function(bikes){
 #' @return df with one row per unique trip start/end stations and columns origin, destination, 
 #' hour (0--23), observed_rate, availability, and rate
 
-arrivals <- function(data, window_start, window_end){
+arrival_rates <- function(data, window_start, window_end){
   day_dif <- as.numeric(difftime(window_end, window_start, units = "days"))
   result <- data %>% filter(start_time >= window_start, start_time <= window_end) %>%
     transmute(origin = as.character(start_station), destination = as.character(end_station), 
@@ -104,3 +104,57 @@ arrivals <- function(data, window_start, window_end){
   
   return(result)
 }
+
+simulate_arrivals <- function(rates, start_time, end_time){
+  
+  arrivals <- rates %>% filter(start_time >= window_start, start_time <= window_end) %>% 
+    group_by(origin, destination, hour) %>% summarise(M = max(observed_rate))
+  arrivals %<>% filter(M != 0)
+
+  arrivals$candidate_time <- start_time
+  
+  while (candidate_time >= end_time) {
+    waiting_time <- rexp(1, rate = M)
+    candidate_time <- candidate_time + waiting_time * 3600
+    candidate_times[[length(candidate_times) + 1]] <- candidate_time
+  }
+  
+  accepted_times <- list()
+  
+  # For each stored candidate time u:
+  for (u in candidate_times) {
+    # Find its hour of the day and look up this pair's hourly rate.
+    # Note: R is 1-indexed, so + 1 converts 0-23 hours to 1-24 indices
+    hour_of_day <- as.POSIXlt(u)$hour
+    hourly_rate <- pair_hourly_rates[hour_of_day + 1]
+    
+    # Set acceptance_probability to hourly_rate / M.
+    acceptance_probability <- hourly_rate / M
+    
+    # Draw U independently from Uniform(0, 1).
+    U <- runif(1, min = 0, max = 1)
+    
+    # Accept the candidate time if U <= acceptance_probability
+    if (U <= acceptance_probability) {
+      accepted_times[[length(accepted_times) + 1]] <- u
+    }
+  }
+#   Create an empty list of candidate times.
+  candidate_times <- list()
+#   Set candidate_time to start_time.
+#   Repeat:
+#     Draw a waiting time from an exponential distribution with rate M.
+#   Advance candidate_time by this waiting time, converted to seconds.
+#   If candidate_time is at or after end_time, stop this loop.
+#   Store candidate_time in the candidate list.
+#   For each stored candidate time u:
+#     Find its hour of the day and look up this pair's hourly rate.
+#         Set acceptance_probability to hourly_rate / M.
+#         Draw U independently from Uniform(0, 1).
+#         If U < acceptance_probability:
+#             Append origin, destination, and u to the arrival table.
+# Sort the arrival table by arrival_time and return it.
+  arrivals <- left_join(arrivals, rates)
+
+}
+
